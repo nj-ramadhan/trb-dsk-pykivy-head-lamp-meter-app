@@ -694,7 +694,7 @@ class ScreenHeadlamp(MDScreen):
         Clock.schedule_once(lambda dt: setattr(self.ids.lb_countdown, 'text', ''), 1)
 
     def start_camera(self):
-        self.capture = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+        self.capture = cv2.VideoCapture(1, cv2.CAP_DSHOW)
         if not self.capture.isOpened(): toast("Error: Tidak dapat membuka kamera."); self.capture = None; return
         self.capture.set(cv2.CAP_PROP_FRAME_WIDTH, self.CAM_WIDTH)
         self.capture.set(cv2.CAP_PROP_FRAME_HEIGHT, self.CAM_HEIGHT)
@@ -724,24 +724,94 @@ class ScreenHeadlamp(MDScreen):
     def convert_lux_to_candela(self, lux_value):
         return lux_value * self.LUX_TO_CANDELA_FACTOR
 
+    # def analyze_frame(self, frame):
+    #     gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    #     display_frame = frame
+    #     (_minVal, _maxVal, _minLoc, maxLoc) = cv2.minMaxLoc(gray_frame)
+    #     beam_center_x, beam_center_y = maxLoc
+    #     roi_size = 50
+    #     roi_x, roi_y = max(0, beam_center_x - roi_size // 2), max(0, beam_center_y - roi_size // 2)
+    #     roi_gray = gray_frame[roi_y : roi_y + roi_size, roi_x : roi_x + roi_size]
+    #     if roi_gray.size > 0:
+    #         mean_pixel_val = cv2.mean(roi_gray)[0]
+    #         self.current_cd = self.convert_lux_to_candela(self.convert_pixel_to_lux(mean_pixel_val))
+    #         self.current_dev_h = (beam_center_x - self.REF_POINT_X) / self.PIXELS_PER_DEGREE_HORIZONTAL
+    #         pixel_dev_y = self.REF_POINT_Y - beam_center_y
+    #         dev_in_mm = pixel_dev_y * self.MM_PER_PIXEL_VERTICAL
+    #         self.current_dev_v = (dev_in_mm / (self.TEST_DISTANCE_METERS * 1000)) * 100
+    #     cv2.circle(display_frame, (self.REF_POINT_X, self.REF_POINT_Y), 10, (255, 0, 0), 2)
+    #     cv2.circle(display_frame, maxLoc, 15, (0, 255, 0), 2)
+    #     cv2.putText(display_frame, f"Daya: {self.current_cd:.0f} cd", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,255,255), 2)
+    #     return display_frame
+
     def analyze_frame(self, frame):
         gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         display_frame = frame
-        (_minVal, _maxVal, _minLoc, maxLoc) = cv2.minMaxLoc(gray_frame)
-        beam_center_x, beam_center_y = maxLoc
-        roi_size = 50
-        roi_x, roi_y = max(0, beam_center_x - roi_size // 2), max(0, beam_center_y - roi_size // 2)
-        roi_gray = gray_frame[roi_y : roi_y + roi_size, roi_x : roi_x + roi_size]
+
+        (frame_height, frame_width) = frame.shape[:2]
+        
+        search_roi_width = 350  # Misal: Lebar 300 piksel
+        search_roi_height = 200 # Misal: Tinggi 200 piksel
+        
+        # Hitung koordinat x, y untuk ROI agar tetap di tengah
+        roi_x = int((frame_width / 2) - (search_roi_width / 2))
+        roi_y = int((frame_height / 2) - (search_roi_height / 2))
+
+        # 2. Ambil hanya bagian ROI dari frame grayscale
+        #    Pastikan ROI tidak keluar dari batas frame
+        roi_x = max(0, roi_x)
+        roi_y = max(0, roi_y)
+        search_roi_gray = gray_frame[roi_y : min(roi_y + search_roi_height, frame_height), 
+                                     roi_x : min(roi_x + search_roi_width, frame_width)]
+
+        if search_roi_gray.size == 0:
+            # Jika ROI gagal dibuat, kembalikan frame asli
+            return frame 
+
+        # 3. Cari titik terterang (maxLoc) HANYA di dalam ROI
+        (_minVal, _maxVal, _minLoc, maxLoc_relative) = cv2.minMaxLoc(search_roi_gray)
+        
+        # 4. Konversi koordinat maxLoc_relative (relatif terhadap ROI) 
+        #    ke koordinat global (relatif terhadap frame utama)
+        beam_center_x = maxLoc_relative[0] + roi_x
+        beam_center_y = maxLoc_relative[1] + roi_y
+        
+        # Simpan koordinat global untuk menggambar lingkaran
+        maxLoc = (beam_center_x, beam_center_y) 
+        
+        # --- PERUBAHAN SELESAI ---
+
+        # Kode selanjutnya (untuk averaging) tetap sama,
+        # tapi sekarang 'beam_center_x/y' sudah dibatasi oleh ROI di atas.
+        roi_size = 50 # Ini adalah kotak untuk averaging (tetap kotak kecil)
+        roi_x_avg, roi_y_avg = max(0, beam_center_x - roi_size // 2), max(0, beam_center_y - roi_size // 2)
+        
+        # Ambil ROI rata-rata dari frame global
+        roi_gray = gray_frame[roi_y_avg : roi_y_avg + roi_size, roi_x_avg : roi_x_avg + roi_size]
+        
         if roi_gray.size > 0:
             mean_pixel_val = cv2.mean(roi_gray)[0]
             self.current_cd = self.convert_lux_to_candela(self.convert_pixel_to_lux(mean_pixel_val))
+            
+            # Hitung deviasi berdasarkan 'beam_center_x/y' yang sudah terbatas
             self.current_dev_h = (beam_center_x - self.REF_POINT_X) / self.PIXELS_PER_DEGREE_HORIZONTAL
             pixel_dev_y = self.REF_POINT_Y - beam_center_y
             dev_in_mm = pixel_dev_y * self.MM_PER_PIXEL_VERTICAL
             self.current_dev_v = (dev_in_mm / (self.TEST_DISTANCE_METERS * 1000)) * 100
+            
+        # Gambar titik referensi (biru)
         cv2.circle(display_frame, (self.REF_POINT_X, self.REF_POINT_Y), 10, (255, 0, 0), 2)
+        
+        # Gambar titik terterang (hijau)
         cv2.circle(display_frame, maxLoc, 15, (0, 255, 0), 2)
+
+        # --- TAMBAHAN VISUALISASI ---
+        # 5. Gambar kotak ROI pencarian (kotak hijau persegi panjang)
+        cv2.rectangle(display_frame, (roi_x, roi_y), (roi_x + search_roi_width, roi_y + search_roi_height), (0, 255, 0), 2)
+        # --- AKHIR TAMBAHAN ---
+        
         cv2.putText(display_frame, f"Daya: {self.current_cd:.0f} cd", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,255,255), 2)
+        
         return display_frame
 
     # PERBAIKAN: Fungsi ini sekarang hanya menghitung dan mengembalikan flag
@@ -765,52 +835,64 @@ class ScreenHeadlamp(MDScreen):
                 1 if overall_status else 0)
 
     def exec_save(self):
-        """Menyimpan semua hasil uji ke database sesuai pemetaan kolom."""
+        """Menyimpan hasil uji lampu JAUH saja, TERMASUK user yang login."""
         if not dt_no_uji:
             toast("Tidak ada data kendaraan yang dipilih.")
             return
 
-        # Ambil data dari dictionary hasil
-        dk = self.test_results['dekat_kanan']
-        dl = self.test_results['dekat_kiri']
+        # Hanya ambil data dari lampu JAUH
         jk = self.test_results['jauh_kanan']
         jl = self.test_results['jauh_kiri']
 
-        # Tentukan status akhir keseluruhan
-        final_hlm_flag = 1
-        for result in self.test_results.values():
-            if result['status'] == 0: # Jika ada satu saja yang tidak lulus
-                final_hlm_flag = 0
-                break
+        # Kumpulkan semua flag individu ke dalam satu list untuk pengecekan
+        all_flags = [
+            jk['intensity_flag'],
+            jk['deviation_flag'],
+            jl['intensity_flag'],
+            jl['deviation_flag']
+        ]
+
+        # Logika baru dengan 3 status: 2 (Belum Uji), 1 (Lulus), 0 (Tidak Lulus)
+        if 2 in all_flags:
+            final_hlm_flag = 2
+        elif all(flag == 1 for flag in all_flags):
+            final_hlm_flag = 1
+        else:
+            final_hlm_flag = 0
+        
+        # PERBAIKAN 1: Dapatkan user ID dan waktu
+        hlm_post = str(time.strftime("%Y/%m/%d %H:%M:%S", time.localtime()))
+        
+        # Gunakan 'dt_id_user' (dari global) bukan 'dt_hlm_user'
+        hlm_user = dt_id_user 
 
         try:
             screen_main = self.manager.get_screen('screen_main')
             screen_main.exec_reload_database()
             cursor = mydb.cursor()
 
+            # PERBAIKAN 2: Pastikan query SQL menggunakan kolom 'hlm_high_...'
+            # (Sesuai permintaan Anda sebelumnya untuk menyimpan lampu jauh saja)
             query = f"""
                 UPDATE {TB_DATA} SET
-                    hlm_low_right_value = %s, hlm_low_right_flag = %s,
-                    hlm_diff_low_right_value = %s, hlm_diff_low_right_flag = %s,
-                    
-                    hlm_low_left_value = %s, hlm_low_left_flag = %s,
-                    hlm_diff_low_left_value = %s, hlm_diff_low_left_flag = %s,
-                    
                     hlm_high_right_value = %s, hlm_high_right_flag = %s,
                     hlm_diff_high_right_value = %s, hlm_diff_high_right_flag = %s,
                     
                     hlm_high_left_value = %s, hlm_high_left_flag = %s,
                     hlm_diff_high_left_value = %s, hlm_diff_high_left_flag = %s,
                     
+                    hlm_user = %s,
+                    hlm_post = %s,
                     hlm_flag = %s
                 WHERE nouji = %s
             """
             
+            # Values sekarang cocok dengan query
             values = (
-                dk['cd'], dk['intensity_flag'], dk['dev_h'], dk['deviation_flag'],
-                dl['cd'], dl['intensity_flag'], dl['dev_h'], dl['deviation_flag'],
                 jk['cd'], jk['intensity_flag'], jk['dev_h'], jk['deviation_flag'],
                 jl['cd'], jl['intensity_flag'], jl['dev_h'], jl['deviation_flag'],
+                hlm_user,
+                hlm_post,
                 final_hlm_flag,
                 dt_no_uji
             )
@@ -818,9 +900,11 @@ class ScreenHeadlamp(MDScreen):
             cursor.execute(query, values)
             mydb.commit()
             
-            toast("Data berhasil disimpan!")
-            Logger.info(f"Data headlamp untuk nouji {dt_no_uji} berhasil disimpan.")
-            self.exec_navigate_main()
+            toast("Data Headlamp berhasil disimpan!")
+            Logger.info(f"Data headlamp (jauh) untuk nouji {dt_no_uji} berhasil disimpan oleh user ID: {hlm_user}.")
+            
+            # PERBAIKAN 3: Navigasi kembali ke 'screen_main', bukan 'screen_menu'
+            self.manager.current = 'screen_main'
 
         except Exception as e:
             toast("Gagal menyimpan data ke database.")
@@ -950,7 +1034,7 @@ class ScreenCalibration(MDScreen):
     def analyze_frame_for_calibration(self, frame):
         """Menganalisis frame di area tengah untuk mendapatkan nilai piksel dan visualisasi."""
         (frame_height, frame_width) = frame.shape[:2]
-        roi_size = 200  # Ukuran kotak ROI (200x200 piksel)
+        roi_size = 250  # Ukuran kotak ROI (200x200 piksel)
         
         roi_x = int((frame_width / 2) - (roi_size / 2))
         roi_y = int((frame_height / 2) - (roi_size / 2))
