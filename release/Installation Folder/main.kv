@@ -4,8 +4,8 @@
 #:include screen_home.kv
 #:include screen_login.kv
 #:include screen_main.kv
-#:include screen_gass_emission.kv
-#:include screen_diesel_emission.kv
+#:include screen_Head_lamp.kv
+#:include screen_Calibration.kv
 
 # ScreenManager:
 <RootScreen>:
@@ -27,13 +27,13 @@
         name: 'screen_main'
         screen_manager: screen_manager
 
-    ScreenGassEmission:
-        id: screen_gass_emission
-        name: 'screen_gass_emission'
+    ScreenHeadlamp:
+        id: screen_Head_lamp
+        name: 'screen_Head_lamp'
         screen_manager: screen_manager   
 
-    ScreenDieselEmission:
-        id: screen_diesel_emission
-        name: 'screen_diesel_emission'
+    ScreenCalibration:
+        id: screen_Calibration
+        name: 'screen_Calibration'
         screen_manager: screen_manager           
 
