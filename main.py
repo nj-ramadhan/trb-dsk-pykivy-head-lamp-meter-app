@@ -750,8 +750,8 @@ class ScreenHeadlamp(MDScreen):
 
         (frame_height, frame_width) = frame.shape[:2]
         
-        search_roi_width = 350  # Misal: Lebar 300 piksel
-        search_roi_height = 200 # Misal: Tinggi 200 piksel
+        search_roi_width = 450  # Misal: Lebar 300 piksel
+        search_roi_height = 250 # Misal: Tinggi 200 piksel
         
         # Hitung koordinat x, y untuk ROI agar tetap di tengah
         roi_x = int((frame_width / 2) - (search_roi_width / 2))
