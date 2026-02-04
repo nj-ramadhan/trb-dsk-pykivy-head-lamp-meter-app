@@ -496,6 +496,7 @@ class ScreenHeadlamp(MDScreen):
 
         try:
             config.read(config_full_path)
+            self.CAMERA_ID = config.getint('headlamp_settings', 'camera_id', fallback=1)
             self.TEST_DISTANCE_METERS = config.getfloat('headlamp_settings', 'test_distance_meters')
             self.CAM_WIDTH = config.getint('headlamp_settings', 'camera_width')
             self.CAM_HEIGHT = config.getint('headlamp_settings', 'camera_height')
@@ -694,7 +695,8 @@ class ScreenHeadlamp(MDScreen):
         Clock.schedule_once(lambda dt: setattr(self.ids.lb_countdown, 'text', ''), 1)
 
     def start_camera(self):
-        self.capture = cv2.VideoCapture(1, cv2.CAP_DSHOW)
+        # self.capture = cv2.VideoCapture(1, cv2.CAP_DSHOW)
+        self.capture = cv2.VideoCapture(self.CAMERA_ID, cv2.CAP_DSHOW)
         if not self.capture.isOpened(): toast("Error: Tidak dapat membuka kamera."); self.capture = None; return
         self.capture.set(cv2.CAP_PROP_FRAME_WIDTH, self.CAM_WIDTH)
         self.capture.set(cv2.CAP_PROP_FRAME_HEIGHT, self.CAM_HEIGHT)
@@ -957,27 +959,46 @@ class ScreenCalibration(MDScreen):
         if self.camera_is_on:
             return
             
-        # Menggunakan CAP_DSHOW untuk performa yang lebih baik di Windows
-        self.capture = cv2.VideoCapture(1, cv2.CAP_DSHOW)
+        # 1. Baca ID Kamera dari Config
+        try:
+            config.read(config_full_path)
+            camera_id = config.getint('headlamp_settings', 'camera_id', fallback=1)
+        except Exception as e:
+            Logger.warning(f"Gagal baca ID kamera dari config: {e}")
+            camera_id = 1 # Default fallback
 
-        if not self.capture.isOpened():
-            toast("Error: Tidak dapat membuka kamera.")
+        # 2. Inisialisasi Kamera
+        try:
+            # Menggunakan CAP_DSHOW untuk performa yang lebih baik di Windows
+            self.capture = cv2.VideoCapture(camera_id, cv2.CAP_DSHOW)
+        except Exception as e:
+            toast(f"Error inisialisasi kamera: {e}")
+            self.capture = None
+
+        # 3. Pengecekan Keamanan (INI YANG MEMPERBAIKI ERROR 'NoneType')
+        # Kita cek dulu apakah self.capture ada isinya (tidak None), baru cek isOpened()
+        if self.capture is None or not self.capture.isOpened():
+            toast("Error: Tidak dapat membuka kamera (Device not found).")
             self.capture = None
             return
             
-        # Atur properti kamera
+        # 4. Atur properti kamera
         self.capture.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
         self.capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
         self.capture.set(cv2.CAP_PROP_AUTOFOCUS, 0)
         self.capture.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0) 
         self.capture.set(cv2.CAP_PROP_AUTO_WB, 0) 
 
-        # Atur exposure awal dari slider
-        initial_exposure = self.ids.exposure_slider.value
-        self.capture.set(cv2.CAP_PROP_EXPOSURE, initial_exposure)
-        self.ids.exposure_label.text = f"Exposure: {int(initial_exposure)}"
+        # 5. Atur exposure awal dari slider
+        try:
+            initial_exposure = self.ids.exposure_slider.value
+            self.capture.set(cv2.CAP_PROP_EXPOSURE, initial_exposure)
+            self.ids.exposure_label.text = f"Exposure: {int(initial_exposure)}"
+        except:
+            pass
         
         self.camera_event = Clock.schedule_interval(self.update_camera_feed, 1.0 / 30.0)
+        self.camera_is_on = True
         self.camera_is_on = True
 
     def stop_camera(self):
