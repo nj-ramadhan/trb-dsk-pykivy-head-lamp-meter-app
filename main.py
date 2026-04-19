@@ -311,7 +311,10 @@ class ScreenMain(MDScreen):
             self.ids.lb_dash_sudah_uji.text = str(dt_dash_sudah_uji)
             
             login_text = f'Login Sebagai: \n{dt_user}' if dt_user else 'Silahkan Login'
-            user_image = f'https://{FTP_HOST}/ujikir/foto_user/{dt_foto_user}' if dt_user else 'assets/images/icon-login.png'
+            if dt_user and dt_foto_user != "":
+                user_image = f'https://{FTP_HOST}/ujikir/foto_user/{dt_foto_user}'
+            else:
+                user_image = 'assets/images/icon-login.png'
 
             for screen_name in ['screen_home', 'screen_login', 'screen_Head_lamp', 'screen_Calibration']:
                 try:
@@ -847,69 +850,73 @@ class ScreenHeadlamp(MDScreen):
                 1 if overall_status else 0)
 
     def exec_save(self):
-        """Menyimpan hasil uji lampu (Flag saja sesuai struktur DB)."""
+        """Menyimpan hasil uji lampu (Flag dan Nilai Angka) ke database."""
         if not dt_no_uji:
             toast("Tidak ada data kendaraan yang dipilih.")
             return
 
-        # Ambil data hasil uji
+        # Ambil data hasil uji dari dictionary internal
         jk = self.test_results['jauh_kanan']
         jl = self.test_results['jauh_kiri']
 
-        # Kumpulkan semua flag individu
+        # 1. Tentukan Kesimpulan Akhir (hlm_flag)
         all_flags = [
-            jk['intensity_flag'],
-            jk['deviation_flag'],
-            jl['intensity_flag'],
-            jl['deviation_flag']
+            jk['intensity_flag'], jk['deviation_flag'],
+            jl['intensity_flag'], jl['deviation_flag']
         ]
-
-        # Logika hlm_flag: 2 (Belum Uji), 1 (Lulus), 0 (Tidak Lulus)
-        if 2 in all_flags:
+        
+        if 2 in all_flags: # Jika ada yang belum diuji
             final_hlm_flag = 2
-        elif all(flag == 1 for flag in all_flags):
+        elif all(flag == 1 for flag in all_flags): # Jika semua lulus
             final_hlm_flag = 1
-        else:
+        else: # Jika ada yang gagal
             final_hlm_flag = 0
         
-        hlm_post = str(time.strftime("%Y/%m/%d %H:%M:%S", time.localtime()))
-        hlm_user = dt_id_user # Diambil dari global dt_id_user (hasil login web_users)
+        # 2. Siapkan Waktu & User
+        now = datetime.datetime.now()
+        hlm_post = now.strftime("%Y-%m-%d %H:%M:%S") # Format lengkap agar tidak error
+        hlm_user = dt_id_user
 
         try:
             screen_main = self.manager.get_screen('screen_main')
             screen_main.exec_reload_database()
             cursor = mydb.cursor()
 
-            # QUERY DISESUAIKAN: Hanya kolom yang ada di gambar Anda
             query = f"""
                 UPDATE {TB_DATA} SET
+                    hlm_flag = %s,
+                    hlm_left_value = %s,
+                    hlm_right_value = %s,
+                    hlm_diff_left_value = %s,
+                    hlm_diff_right_value = %s,
+                    hlm_user = %s,
+                    hlm_post = %s,
                     hlm_right_flag = %s,
                     hlm_left_flag = %s,
                     hlm_diff_right_flag = %s,
-                    hlm_diff_left_flag = %s,
-                    hlm_user = %s,
-                    hlm_post = %s,
-                    hlm_flag = %s
+                    hlm_diff_left_flag = %s
                 WHERE nouji = %s
             """
             
-            # Values: Kita simpan flag kelulusan intensity ke hlm_right/left_flag
-            # dan flag penyimpangan ke hlm_diff_right/left_flag
             values = (
+                final_hlm_flag,         # hlm_flag
+                jl['cd'],               # hlm_left_value (Daya Kiri)
+                jk['cd'],               # hlm_right_value (Daya Kanan)
+                jl['dev_h'],            # hlm_diff_left_value (Penyimpangan Kiri)
+                jk['dev_h'],            # hlm_diff_right_value (Penyimpangan Kanan)
+                hlm_user,               # hlm_user
+                hlm_post,               # hlm_post
                 jk['intensity_flag'],   # hlm_right_flag
                 jl['intensity_flag'],   # hlm_left_flag
                 jk['deviation_flag'],   # hlm_diff_right_flag
                 jl['deviation_flag'],   # hlm_diff_left_flag
-                hlm_user,               # hlm_user
-                hlm_post,               # hlm_post
-                final_hlm_flag,         # hlm_flag
-                dt_no_uji               # nouji
+                dt_no_uji               # WHERE nouji
             )
             
             cursor.execute(query, values)
             mydb.commit()
             
-            toast(f"Data Headlamp disimpan (User ID: {hlm_user})")
+            toast(f"Data Berhasil Disimpan!")
             self.manager.current = 'screen_main'
 
         except Exception as e:
