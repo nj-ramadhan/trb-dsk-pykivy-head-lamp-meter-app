@@ -46,6 +46,10 @@ from kivy.logger import Logger
 from kivy.clock import Clock
 from kivy.graphics.texture import Texture
 
+dt_id_user = 0
+dt_user = ""
+dt_foto_user = ""
+
 colors = {
     "Red"   : {"A200": "#FF2A2A","A500": "#FF8080","A700": "#FFD5D5",},
     "Gray"  : {"200": "#CCCCCC","500": "#ECECEC","700": "#F9F9F9",},
@@ -72,9 +76,9 @@ LB_UNIT = config['app']['LB_UNIT']
 LB_UNIT_ADDRESS = config['app']['LB_UNIT_ADDRESS']
 
 # SQL setting
-DB_HOST = "194.31.53.37"
-DB_USER = "Pndujikir2022!"  
-DB_PASSWORD = "@Kirpnd2022!"
+DB_HOST = "187.77.112.162"
+DB_USER = "Pndujikir2026!"
+DB_PASSWORD = "@PndKir2026!"
 
 DB_NAME = "pkbpandeglang"
 TB_DATA = "tb_cekident"
@@ -84,9 +88,9 @@ TB_BAHAN_BAKAR = "bahanbakar"
 TB_WARNA = "warna"
 TB_DATA_MASTER = "identkendaraan"
 
-FTP_HOST = "194.31.53.37"
+FTP_HOST = "187.117.112.162"
 FTP_USER = "root"
-FTP_PASS = "@D15HUBp2022!"
+FTP_PASS = "@SorongNew2026"
 
 class ScreenHome(MDScreen):
     def __init__(self, **kwargs):
@@ -171,40 +175,47 @@ class ScreenLogin(MDScreen):
             toast_msg = f'error Login: {e}'
 
     def exec_login(self):
-        global mydb, db_users
-        global dt_id_user, dt_user, dt_foto_user
+        global mydb, dt_id_user, dt_user, dt_foto_user
+        import bcrypt  # Pastikan library bcrypt sudah terinstall
         screen_main = self.screen_manager.get_screen('screen_main')
 
         try:
             screen_main.exec_reload_database()
-            input_username = self.ids.tx_username.text
+            input_email = self.ids.tx_username.text  # tx_username digunakan untuk input email
             input_password = self.ids.tx_password.text        
-            dataBase_password = input_password
-            hashed_password = hashlib.md5(dataBase_password.encode())
-            mycursor = mydb.cursor()
-            mycursor.execute(f"SELECT id_user, nama, username, password, image FROM {TB_USER} WHERE username = '{input_username}' and password = '{hashed_password.hexdigest()}'")
-            myresult = mycursor.fetchone()
-            db_users = np.array(myresult).T
             
-            if myresult is None:
-                toast_msg = f'Gagal Masuk, Nama Pengguna atau Password Salah'
-                toast(toast_msg) 
-                Logger.warning(f"{self.name}: {toast_msg}") 
+            mycursor = mydb.cursor()
+            # Query samakan dengan aplikasi emisi (tipe_user = '2')
+            query = "SELECT id, name, email, password FROM web_users WHERE email = %s AND tipe_user = '3'"
+            
+            mycursor.execute(query, (input_email,))
+            myresult = mycursor.fetchone()
+            
+            if myresult:
+                db_id = myresult[0]
+                db_name = myresult[1]
+                db_hashed_password = myresult[3] 
+
+                # Verifikasi menggunakan Bcrypt
+                if bcrypt.checkpw(input_password.encode('utf-8'), db_hashed_password.encode('utf-8')):
+                    toast(f"Berhasil Masuk, Selamat Datang {db_name}")
+                    
+                    # Simpan data ke variabel global
+                    dt_id_user = db_id
+                    dt_user = db_name
+                    dt_foto_user = "" # web_users biasanya tidak ada kolom image
+                    
+                    self.ids.tx_username.text = ""
+                    self.ids.tx_password.text = "" 
+                    self.screen_manager.current = 'screen_main'
+                else:
+                    toast("maaf username dan password tidak sesuai")
             else:
-                toast_msg = f'Berhasil Masuk, Selamat Datang {myresult[1]}'
-                toast(toast_msg)
-                Logger.info(f"{self.name}: {toast_msg}")  
-                dt_id_user = myresult[0]
-                dt_user = myresult[1]
-                dt_foto_user = myresult[4]
-                self.ids.tx_username.text = ""
-                self.ids.tx_password.text = "" 
-                self.screen_manager.current = 'screen_main'
+                toast("maaf username dan password tidak sesuai")
 
         except Exception as e:
-            toast_msg = f'Gagal masuk, silahkan isi nama user dan password yang sesuai'
-            toast(toast_msg)  
-            Logger.error(f"{self.name}: {toast_msg}, {e}")  
+            Logger.error(f"Login Error: {e}")
+            toast(f"Gagal masuk: {e}")
 
     def exec_navigate_home(self):
         try:
@@ -299,7 +310,10 @@ class ScreenMain(MDScreen):
             self.ids.lb_dash_sudah_uji.text = str(dt_dash_sudah_uji)
             
             login_text = f'Login Sebagai: \n{dt_user}' if dt_user else 'Silahkan Login'
-            user_image = f'https://{FTP_HOST}/ujikir/foto_user/{dt_foto_user}' if dt_user else 'assets/images/icon-login.png'
+            if dt_user and dt_foto_user != "":
+                user_image = f'https://{FTP_HOST}/ujikir/foto_user/{dt_foto_user}'
+            else:
+                user_image = 'assets/images/icon-login.png'
 
             for screen_name in ['screen_home', 'screen_login', 'screen_Head_lamp', 'screen_Calibration']:
                 try:
@@ -507,6 +521,7 @@ class ScreenHeadlamp(MDScreen):
             self.MAX_DEVIATION_LEFT_DEG = config.getfloat('headlamp_settings', 'max_deviation_left_deg')
             self.MAX_VERTICAL_DEVIATION_PERCENT = config.getfloat('headlamp_settings', 'max_vertical_deviation_percent')
             self.LUX_TO_CANDELA_FACTOR = self.TEST_DISTANCE_METERS ** 2
+            self.CAMERA_INDEX = config.getint('headlamp_settings', 'camera_index', fallback=0)
             Logger.info(f"{self.name}: Pengaturan Headlamp berhasil dimuat.")
         except Exception as e:
             toast("Gagal memuat config.ini, menggunakan nilai default.")
@@ -693,7 +708,7 @@ class ScreenHeadlamp(MDScreen):
         Clock.schedule_once(lambda dt: setattr(self.ids.lb_countdown, 'text', ''), 1)
 
     def start_camera(self):
-        self.capture = cv2.VideoCapture(1, cv2.CAP_DSHOW)
+        self.capture = cv2.VideoCapture(self.CAMERA_INDEX, cv2.CAP_DSHOW)
         if not self.capture.isOpened(): toast("Error: Tidak dapat membuka kamera."); self.capture = None; return
         self.capture.set(cv2.CAP_PROP_FRAME_WIDTH, self.CAM_WIDTH)
         self.capture.set(cv2.CAP_PROP_FRAME_HEIGHT, self.CAM_HEIGHT)
@@ -834,80 +849,78 @@ class ScreenHeadlamp(MDScreen):
                 1 if overall_status else 0)
 
     def exec_save(self):
-        """Menyimpan hasil uji lampu JAUH saja, TERMASUK user yang login."""
+        """Menyimpan hasil uji lampu (Flag dan Nilai Angka) ke database."""
         if not dt_no_uji:
             toast("Tidak ada data kendaraan yang dipilih.")
             return
 
-        # Hanya ambil data dari lampu JAUH
+        # Ambil data hasil uji dari dictionary internal
         jk = self.test_results['jauh_kanan']
         jl = self.test_results['jauh_kiri']
 
-        # Kumpulkan semua flag individu ke dalam satu list untuk pengecekan
+        # 1. Tentukan Kesimpulan Akhir (hlm_flag)
         all_flags = [
-            jk['intensity_flag'],
-            jk['deviation_flag'],
-            jl['intensity_flag'],
-            jl['deviation_flag']
+            jk['intensity_flag'], jk['deviation_flag'],
+            jl['intensity_flag'], jl['deviation_flag']
         ]
-
-        # Logika baru dengan 3 status: 2 (Belum Uji), 1 (Lulus), 0 (Tidak Lulus)
-        if 2 in all_flags:
+        
+        if 2 in all_flags: # Jika ada yang belum diuji
             final_hlm_flag = 2
-        elif all(flag == 1 for flag in all_flags):
+        elif all(flag == 1 for flag in all_flags): # Jika semua lulus
             final_hlm_flag = 1
-        else:
+        else: # Jika ada yang gagal
             final_hlm_flag = 0
         
-        # PERBAIKAN 1: Dapatkan user ID dan waktu
-        hlm_post = str(time.strftime("%Y/%m/%d %H:%M:%S", time.localtime()))
-        
-        # Gunakan 'dt_id_user' (dari global) bukan 'dt_hlm_user'
-        hlm_user = dt_id_user 
+        # 2. Siapkan Waktu & User
+        now = datetime.datetime.now()
+        hlm_post = now.strftime("%Y-%m-%d %H:%M:%S") # Format lengkap agar tidak error
+        hlm_user = dt_id_user
 
         try:
             screen_main = self.manager.get_screen('screen_main')
             screen_main.exec_reload_database()
             cursor = mydb.cursor()
 
-            # PERBAIKAN 2: Pastikan query SQL menggunakan kolom 'hlm_high_...'
-            # (Sesuai permintaan Anda sebelumnya untuk menyimpan lampu jauh saja)
             query = f"""
                 UPDATE {TB_DATA} SET
-                    hlm_high_right_value = %s, hlm_high_right_flag = %s,
-                    hlm_diff_high_right_value = %s, hlm_diff_high_right_flag = %s,
-                    
-                    hlm_high_left_value = %s, hlm_high_left_flag = %s,
-                    hlm_diff_high_left_value = %s, hlm_diff_high_left_flag = %s,
-                    
+                    hlm_flag = %s,
+                    hlm_left_value = %s,
+                    hlm_right_value = %s,
+                    hlm_diff_left_value = %s,
+                    hlm_diff_right_value = %s,
                     hlm_user = %s,
                     hlm_post = %s,
-                    hlm_flag = %s
+                    hlm_right_flag = %s,
+                    hlm_left_flag = %s,
+                    hlm_diff_right_flag = %s,
+                    hlm_diff_left_flag = %s
                 WHERE nouji = %s
             """
             
-            # Values sekarang cocok dengan query
             values = (
-                jk['cd'], jk['intensity_flag'], jk['dev_h'], jk['deviation_flag'],
-                jl['cd'], jl['intensity_flag'], jl['dev_h'], jl['deviation_flag'],
-                hlm_user,
-                hlm_post,
-                final_hlm_flag,
-                dt_no_uji
+                final_hlm_flag,         # hlm_flag
+                jl['cd'],               # hlm_left_value (Daya Kiri)
+                jk['cd'],               # hlm_right_value (Daya Kanan)
+                jl['dev_h'],            # hlm_diff_left_value (Penyimpangan Kiri)
+                jk['dev_h'],            # hlm_diff_right_value (Penyimpangan Kanan)
+                hlm_user,               # hlm_user
+                hlm_post,               # hlm_post
+                jk['intensity_flag'],   # hlm_right_flag
+                jl['intensity_flag'],   # hlm_left_flag
+                jk['deviation_flag'],   # hlm_diff_right_flag
+                jl['deviation_flag'],   # hlm_diff_left_flag
+                dt_no_uji               # WHERE nouji
             )
             
             cursor.execute(query, values)
             mydb.commit()
             
-            toast("Data Headlamp berhasil disimpan!")
-            Logger.info(f"Data headlamp (jauh) untuk nouji {dt_no_uji} berhasil disimpan oleh user ID: {hlm_user}.")
-            
-            # PERBAIKAN 3: Navigasi kembali ke 'screen_main', bukan 'screen_menu'
+            toast(f"Data Berhasil Disimpan!")
             self.manager.current = 'screen_main'
 
         except Exception as e:
             toast("Gagal menyimpan data ke database.")
-            Logger.error(f"{self.name}: Error saat menyimpan: {e}")
+            Logger.error(f"{self.name}: Error saat simpan: {e}")
 
     def exec_navigate_main(self):
         self.manager.current = 'screen_main'
@@ -956,8 +969,11 @@ class ScreenCalibration(MDScreen):
         if self.camera_is_on:
             return
             
-        # Menggunakan CAP_DSHOW untuk performa yang lebih baik di Windows
-        self.capture = cv2.VideoCapture(1, cv2.CAP_DSHOW)
+        local_config = configparser.ConfigParser()
+        local_config.read(config_full_path)
+        cam_idx = local_config.getint('headlamp_settings', 'camera_index', fallback=0)
+        
+        self.capture = cv2.VideoCapture(cam_idx, cv2.CAP_DSHOW)
 
         if not self.capture.isOpened():
             toast("Error: Tidak dapat membuka kamera.")
