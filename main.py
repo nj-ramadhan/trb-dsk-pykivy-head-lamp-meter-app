@@ -1,12 +1,8 @@
 import datetime
 import os, sys, time
 import ssl
-import serial
-from serial.tools import list_ports
-import random
 ssl._create_default_https_context = ssl._create_unverified_context
-import cv2
-from kivy.graphics.texture import Texture
+
 if getattr(sys, 'frozen', False):
     application_path = os.path.dirname(sys.executable)
     running_mode = 'Frozen/executable'
@@ -39,12 +35,11 @@ from kivy.metrics import dp
 from kivymd.toast import toast
 from kivymd.app import MDApp
 import numpy as np
-import configparser, hashlib, mysql.connector
-from pymodbus.client import ModbusTcpClient
-from fpdf import FPDF
+import configparser, mysql.connector
 from kivy.logger import Logger
 from kivy.clock import Clock
 from kivy.graphics.texture import Texture
+import cv2
 
 dt_id_user = 0
 dt_user = ""
