@@ -3,15 +3,17 @@
 block_cipher = None
 from kivy_deps import sdl2, glew
 from kivymd import hooks_path as kivymd_hooks_path
+from PyInstaller.utils.hooks import collect_data_files
 
 a = Analysis(['main.py'],
-             pathex=['C:\\Users\\path\\to\\file'],
+             pathex=[],
              binaries=[],
-             datas=[('main.kv', '.'), ('screen_home.kv', '.'), ('screen_login.kv', '.'), ('screen_main.kv', '.'), 
-                     ('screen_calibration.kv', '.'), ('screen_head_lamp.kv', '.'),
-                     ('config.ini', '.'), ('./assets/images/*.png', 'images'), ('./assets/images/*.jpg', 'images'),
-                     ('.venv/Lib/site-packages/escpos/capabilities.json', 'escpos'),],
-             hiddenimports=[],
+             datas=[('main.kv', '.'), ('screen_home.kv', '.'), ('screen_login.kv', '.'), ('screen_main.kv', '.'),
+                     ('screen_Calibration.kv', '.'), ('screen_Head_lamp.kv', '.'),
+                     ('config.ini', '.'), ('./assets/images/*.png', 'assets/images'), ('./assets/images/*.jpg', 'assets/images'),
+                     ('./assets/fonts/*.ttf', 'assets/fonts'), ('./assets/fonts/*.otf', 'assets/fonts'),]
+                    + collect_data_files('escpos'),
+             hiddenimports=['mysql.connector.locales.eng', 'mysql.connector.locales.eng.client_error'],
              hookspath=[kivymd_hooks_path],
              runtime_hooks=[],
              excludes=[],

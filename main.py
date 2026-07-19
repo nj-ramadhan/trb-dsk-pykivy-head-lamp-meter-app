@@ -36,6 +36,7 @@ from kivymd.toast import toast
 from kivymd.app import MDApp
 import numpy as np
 import configparser, mysql.connector
+from fpdf import FPDF
 from kivy.logger import Logger
 from kivy.clock import Clock
 from kivy.graphics.texture import Texture
@@ -285,6 +286,7 @@ class ScreenMain(MDScreen):
 
     def on_enter(self):
         self.exec_reload_database()
+        
         self.exec_reload_table()
 
     def regular_update_display(self, dt):
@@ -909,13 +911,133 @@ class ScreenHeadlamp(MDScreen):
             
             cursor.execute(query, values)
             mydb.commit()
-            
+
             toast(f"Data Berhasil Disimpan!")
+            self.exec_print(final_hlm_flag, hlm_post)
             self.manager.current = 'screen_main'
 
         except Exception as e:
             toast("Gagal menyimpan data ke database.")
             Logger.error(f"{self.name}: Error saat simpan: {e}")
+
+    def exec_print(self, final_hlm_flag, print_datetime):
+        """Cetak hasil uji Head Lamp Tester ke PDF."""
+        global dt_no_antri, dt_no_pol, dt_no_uji, dt_sts_uji, dt_merk, dt_type
+        global dt_jns_kend, dt_warna, dt_thn_buat, dt_user, db_merk, db_warna
+
+        try:
+            try:
+                merk_row = db_merk[db_merk[:, 0] == dt_merk]
+                merk_text = merk_row[0, 1] if merk_row.size > 0 else str(dt_merk)
+            except Exception:
+                merk_text = str(dt_merk)
+
+            try:
+                warna_row = db_warna[db_warna[:, 0] == dt_warna]
+                warna_text = warna_row[0, 1] if warna_row.size > 0 else str(dt_warna)
+            except Exception:
+                warna_text = str(dt_warna)
+
+            sts_uji_map = {'B': 'Berkala', 'U': 'Uji Ulang', 'BR': 'Baru', 'NB': 'Numpang Uji'}
+            sts_uji_text = sts_uji_map.get(dt_sts_uji, 'Mutasi')
+            hasil_text = "LULUS" if final_hlm_flag == 1 else "TIDAK LULUS"
+
+            status_map = {1: 'Lulus', 0: 'Tidak Lulus', 2: 'Belum Uji'}
+            baris_uji = [
+                ('Lampu Jauh Kiri', self.test_results['jauh_kiri']),
+                ('Lampu Jauh Kanan', self.test_results['jauh_kanan']),
+                ('Lampu Dekat Kiri', self.test_results['dekat_kiri']),
+                ('Lampu Dekat Kanan', self.test_results['dekat_kanan']),
+            ]
+
+            pdf = FPDF()
+            pdf.add_page()
+            pdf.set_xy(0, 2)
+            pdf.image(f"assets/images/{IMG_LOGO_DISHUB}", w=30.0, h=0, x=20)
+            pdf.set_xy(0, 2)
+            pdf.image(f"assets/images/{IMG_LOGO_PEMKAB}", w=30.0, h=0, x=180)
+            pdf.set_font('Arial', 'B', 18.0)
+            pdf.cell(ln=1, h=5.0, w=0)
+            pdf.cell(ln=1, h=10.0, align='C', w=0, txt=LB_DISHUB, border=0)
+            pdf.set_font('Arial', 'B', 13.0)
+            pdf.cell(ln=1, h=8.0, align='C', w=0, txt=LB_UNIT, border=0)
+            pdf.cell(ln=1, h=5.0, w=0)
+
+            # Blok Info Kendaraan
+            pdf.set_font('Arial', 'B', 14.0)
+            pdf.cell(ln=0, h=10.0, align='L', w=0, txt=f"Tanggal: {print_datetime}", border=0)
+            pdf.cell(ln=1, h=10.0, align='R', w=0, txt=f"No Reg Kend: {dt_no_pol}", border=0)
+            pdf.cell(ln=0, h=10.0, align='L', w=0, txt=f"No Antrian: {dt_no_antri}", border=0)
+            pdf.cell(ln=1, h=10.0, align='R', w=0, txt=f"No Uji: {dt_no_uji}", border=0)
+            pdf.cell(ln=1, h=10.0, align='L', w=0, txt=f"Jenis Pengujian: {sts_uji_text}", border=0)
+            pdf.cell(ln=1, h=10.0, align='L', w=0, txt=f"Jenis Kendaraan: {dt_jns_kend}", border=0)
+            pdf.cell(ln=0, h=10.0, align='L', w=0, txt=f"Merk/Type: {merk_text} / {dt_type}", border=0)
+            pdf.cell(ln=1, h=10.0, align='R', w=0, txt=f"Warna: {warna_text}", border=0)
+            pdf.cell(ln=1, h=10.0, align='L', w=0, txt=f"Thn Buat: {dt_thn_buat}", border=0)
+            pdf.cell(ln=1, h=5.0, w=0)
+
+            # Section Tabel: HASIL UJI HEAD LAMP TESTER
+            pdf.set_font('Arial', 'B', 14.0)
+            pdf.cell(ln=1, h=8.0, align='L', w=0, txt="HASIL UJI HEAD LAMP TESTER", border=0)
+
+            col_bagian, col_daya, col_devh, col_devv, col_status = 42, 32, 38, 38, 40
+            pdf.set_font('Arial', 'B', 11.0)
+            pdf.cell(ln=0, h=7.0, align='C', w=col_bagian, txt="Bagian", border=1)
+            pdf.cell(ln=0, h=7.0, align='C', w=col_daya, txt="Daya (Cd)", border=1)
+            pdf.cell(ln=0, h=7.0, align='C', w=col_devh, txt="Peny. Horizontal", border=1)
+            pdf.cell(ln=0, h=7.0, align='C', w=col_devv, txt="Peny. Vertikal", border=1)
+            pdf.cell(ln=1, h=7.0, align='C', w=col_status, txt="Status", border=1)
+
+            pdf.set_font('Arial', '', 11.0)
+            for label, result in baris_uji:
+                dev_h, dev_v = result.get('dev_h', 0), result.get('dev_v', 0)
+                dev_h_text = f"{abs(dev_h):.2f} {'Kiri' if dev_h < 0 else 'Kanan'}"
+                dev_v_text = f"{abs(dev_v):.2f}% {'Bawah' if dev_v < 0 else 'Atas'}"
+                pdf.cell(ln=0, h=7.0, align='L', w=col_bagian, txt=f" {label}", border=1)
+                pdf.cell(ln=0, h=7.0, align='C', w=col_daya, txt=f"{result.get('cd', 0):.0f}", border=1)
+                pdf.cell(ln=0, h=7.0, align='C', w=col_devh, txt=dev_h_text, border=1)
+                pdf.cell(ln=0, h=7.0, align='C', w=col_devv, txt=dev_v_text, border=1)
+                pdf.cell(ln=1, h=7.0, align='C', w=col_status, txt=status_map.get(result.get('status', 2), '-'), border=1)
+            pdf.cell(ln=1, h=3.0, w=0)
+
+            pdf.set_font('Arial', '', 11.0)
+            pdf.cell(ln=1, h=6.0, align='L', w=0,
+                     txt=f"Ambang Batas : Daya Min {self.MIN_CANDELA_THRESHOLD:.0f} Cd | "
+                         f"Deviasi H Kiri Maks {self.MAX_DEVIATION_LEFT_DEG}° / Kanan Maks {self.MAX_DEVIATION_RIGHT_DEG}°", border=0)
+            pdf.cell(ln=1, h=6.0, align='L', w=0,
+                     txt=f"Deviasi V Maks {self.MAX_VERTICAL_DEVIATION_PERCENT}%", border=0)
+            pdf.set_font('Arial', '', 12.0)
+            pdf.cell(ln=1, h=8.0, align='L', w=0, txt=f"Petugas : {dt_user}", border=0)
+            pdf.set_font('Arial', 'B', 12.0)
+            pdf.cell(ln=1, h=8.0, align='L', w=0, txt=f"Status Pengujian : {hasil_text}", border=0)
+            pdf.cell(ln=1, h=6.0, w=0)
+
+            # Resume Akhir
+            pdf.set_font('Arial', '', 14.0)
+            pdf.cell(ln=1, h=10.0, align='C', w=0, txt="Resume Hasil Pengujian", border=0)
+            pdf.set_font('Arial', 'B', 24.0)
+            pdf.cell(ln=1, h=15.0, align='C', w=0, txt=hasil_text, border=0)
+
+            documents_dir = os.path.join(os.environ["USERPROFILE"], "Documents")
+
+            folder_name = f"Hasil_Uji_VIIMS_Head_Lamp_{time.strftime('%Y-%m-%d', time.localtime())}"
+            date_folder_path = os.path.join(documents_dir, folder_name)
+
+            if not os.path.exists(date_folder_path):
+                os.makedirs(date_folder_path)
+
+            pdf_filename = f"Hasil_Uji_No_{dt_no_antri}.pdf"
+            pdf_path = os.path.join(date_folder_path, pdf_filename)
+
+            pdf.output(pdf_path)
+            toast(f"PDF tersimpan: {pdf_path}")
+            os.startfile(pdf_path)
+            Logger.info(f"{self.name}: PRINT_PDF_HEADLAMP antrian={dt_no_antri} nopol={dt_no_pol} path={pdf_path}")
+
+        except Exception as e:
+            toast_msg = 'Gagal mencetak PDF'
+            toast(toast_msg)
+            Logger.error(f"{self.name}: {toast_msg}, {e}")
 
     def exec_navigate_main(self):
         self.manager.current = 'screen_main'
@@ -1154,7 +1276,7 @@ class HeadlampmeterApp(MDApp):
         self.theme_cls.primary_palette = "Gray"
         self.theme_cls.accent_palette = "Blue"
         self.theme_cls.theme_style = "Light"
-        self.icon = 'assets/images/logo-load-app.png'
+        self.icon = 'assets/images/logo-hlslwt-app.png'
         window_size_y = Window.size[0]
         window_size_x = Window.size[1]
         self.set_dynamic_fonts(Window.size)
