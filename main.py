@@ -181,22 +181,23 @@ class ScreenLogin(MDScreen):
             
             mycursor = mydb.cursor()
             # Query samakan dengan aplikasi emisi (tipe_user = '2')
-            query = "SELECT id, name, email, password FROM web_users WHERE email = %s AND tipe_user = '3'"
-            
+            query = "SELECT id, name, email, password, id_sumber FROM web_users WHERE email = %s AND tipe_user = '3'"
+
             mycursor.execute(query, (input_email,))
             myresult = mycursor.fetchone()
-            
+
             if myresult:
                 db_id = myresult[0]
                 db_name = myresult[1]
-                db_hashed_password = myresult[3] 
+                db_hashed_password = myresult[3]
+                db_id_sumber = myresult[4]
 
                 # Verifikasi menggunakan Bcrypt
                 if bcrypt.checkpw(input_password.encode('utf-8'), db_hashed_password.encode('utf-8')):
                     toast(f"Berhasil Masuk, Selamat Datang {db_name}")
-                    
+
                     # Simpan data ke variabel global
-                    dt_id_user = db_id
+                    dt_id_user = db_id_sumber
                     dt_user = db_name
                     dt_foto_user = "" # web_users biasanya tidak ada kolom image
                     
@@ -260,7 +261,6 @@ class ScreenMain(MDScreen):
 
         dt_user = dt_foto_user = dt_no_antri = dt_no_pol = dt_no_uji = dt_sts_uji = dt_nama = ""
         dt_merk = dt_type = dt_jns_kend = dt_jbb = dt_brt_ksg = dt_bhn_bkr = dt_warna = dt_chasis = dt_no_mesin = ""
-        dt_id_user = 1
         dt_dash_pendaftaran = dt_dash_belum_uji = dt_dash_sudah_uji = 0
         
         hlm_right_value = hlm_right_flag = 2
